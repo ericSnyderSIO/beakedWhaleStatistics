@@ -1,0 +1,203 @@
+fdir = dir('D:\SOCAL_E_63\tracking\interns2022\ericEdits_allTracks\*track*');
+
+% set up H matrices:
+hyd1 = load('D:\MATLAB_addons\gitHub\wheresWhaledo\receiverPositionInversion\SOCAL_E_63_EE_Hmatrix_new.mat');
+hyd2 = load('D:\MATLAB_addons\gitHub\wheresWhaledo\receiverPositionInversion\SOCAL_E_63_EW_Hmatrix_new.mat');
+
+c = 1488.4; % speed of sound
+spd = 60*60*24;
+
+% load('D:\SOCAL_E_63\xwavTables\instrumentLocs.mat')
+load('D:\SOCAL_E_63\xwavTables\instrumentLocs_new.mat')
+hydLoc{1} = hLatLonZ(1,:);
+hydLoc{2} = hLatLonZ(2,:);
+hydLoc{3} = hLatLonZ(3,:);
+hydLoc{4} = hLatLonZ(4,:);
+
+h0 = mean([hydLoc{1}; hydLoc{2}]);
+
+% convert hydrophone locations to meters:
+[h1(1), h1(2)] = latlon2xy_wgs84(hydLoc{1}(1), hydLoc{1}(2), h0(1), h0(2));
+h1(3) = abs(h0(3))-abs(hydLoc{1}(3));
+
+[h2(1), h2(2)] = latlon2xy_wgs84(hydLoc{2}(1), hydLoc{2}(2), h0(1), h0(2));
+h2(3) = abs(h0(3))-abs(hydLoc{2}(3));
+
+[h3(1), h3(2)] = latlon2xy_wgs84(hydLoc{3}(1), hydLoc{3}(2), h0(1), h0(2));
+h3(3) = abs(h0(3))-abs(hydLoc{3}(3));
+
+[h4(1), h4(2)] = latlon2xy_wgs84(hydLoc{4}(1), hydLoc{4}(2), h0(1), h0(2));
+h4(3) = abs(h0(3))-abs(hydLoc{4}(3));
+
+hloc = [h1;h2;h3;h4];
+
+% Reorder hydrophones to fit new TDOA order (needed at SOCAL_E because sometimes I make things confusing even for myself)
+H{1} = [hyd1.hydPos(2,:)-hyd1.hydPos(1,:);
+    hyd1.hydPos(3,:)-hyd1.hydPos(1,:);
+    hyd1.hydPos(4,:)-hyd1.hydPos(1,:);
+    hyd1.hydPos(3,:)-hyd1.hydPos(2,:);
+    hyd1.hydPos(4,:)-hyd1.hydPos(2,:);
+    hyd1.hydPos(4,:)-hyd1.hydPos(3,:)];
+
+H{2} = [hyd2.hydPos(2,:)-hyd2.hydPos(1,:);
+    hyd2.hydPos(3,:)-hyd2.hydPos(1,:);
+    hyd2.hydPos(4,:)-hyd2.hydPos(1,:);
+    hyd2.hydPos(3,:)-hyd2.hydPos(2,:);
+    hyd2.hydPos(4,:)-hyd2.hydPos(2,:);
+    hyd2.hydPos(4,:)-hyd2.hydPos(3,:)];
+
+% load drift:
+load('D:\SOCAL_E_63\tracking\experiments\clockSync\drift.mat');
+dp{1} = coeffvalues(Dpoly{1}); % drift coefficients between inst 1 and 2
+dp{2} = coeffvalues(Dpoly{2}); % drift coefficients between inst 1 and 3
+dp{3} = coeffvalues(Dpoly{3}); % drift coefficients between inst 1 and 4
+dp{4} = coeffvalues(Dpoly{4}); % drift coefficients between inst 2 and 3
+dp{5} = coeffvalues(Dpoly{5}); % drift coefficients between inst 2 and 4
+dp{6} = coeffvalues(Dpoly{6}); % drift coefficients between inst 3 and 4
+
+Nlrg = 6; % number of large ap TDOAs
+global LOC
+loadParams('localize.params')
+sig2sml = LOC.sig_sml.^2;
+sig2lrg = LOC.sig_lrg.^2;
+
+global brushing
+loadParams('D:\MATLAB_addons\gitHub\wheresWhaledo\brushing.params')
+
+% xwav tables:
+load('D:\SOCAL_E_63\xwavTables\SOCAL_E_63_EE_C4_xwavLookupTable');
+XH{1} = xwavTable;
+load('D:\SOCAL_E_63\xwavTables\SOCAL_E_63_EW_C4_xwavLookupTable');
+XH{2} = xwavTable;
+load('D:\SOCAL_E_63\xwavTables\SOCAL_E_63_EN_xwavLookupTable');
+XH{3} = xwavTable;
+load('D:\SOCAL_E_63\xwavTables\SOCAL_E_63_ES_xwavLookupTable');
+XH{4} = xwavTable;
+
+%%
+
+col = hsv(360);
+
+fig = figure(10);
+subplot(1,2,1);
+G = load('D:\SOCAL_E_63\bathymetry\SOCAL_E_63_GMRT.mat');
+
+load('D:\Writing\wheresWhaledo\figures\tracks\hydLoc.mat')
+
+y2k = datenum([2000, 0, 0, 0, 0, 0]);
+
+plotAx = [-4000, 4000, -4000, 4000];
+
+[x,~] = latlon2xy_wgs84(h0(1).*ones(size(G.lon)), G.lon, h0(1), h0(2));
+[~,y] = latlon2xy_wgs84(G.lat, h0(2).*ones(size(G.lat)), h0(1), h0(2));
+Ix = find(x>=plotAx(1) & x<=plotAx(2));
+Iy = find(y>=plotAx(3) & y<=plotAx(4));
+   
+[cntr, hc] = contour(x(Ix), y(Iy), G.z(Iy,Ix), -1340:10:-500, 'edgeColor', [.8, .8, .8]);
+% clabel(cntr, hc, [-1340:20:-1250, -1200:100:-500], 'color', [.6, .6, .6])
+clabel(cntr, hc, -1400:100:-500, 'color', [.6, .6, .6])
+hold on
+
+i = 0;
+for nd = 1:numel(fdir)%95
+    if ~isfolder(fullfile(fdir(nd).folder, fdir(nd).name)) % if this isn't a directory, skip to next iteration
+        continue
+    end
+    currentDirectory = fullfile(fdir(nd).folder, fdir(nd).name);
+    locFile = dir(fullfile(currentDirectory, '*loc*.mat'));
+
+    % if there are multiple localization files, select the most recently
+    % edited one:
+    if numel(locFile)==1
+
+    elseif isempty(locFile)
+        continue
+    else % more than one localization file exists
+        dnum = datenum(vertcat(locFile(:).date)); % datenum format of last edited date
+        [~, IndLastEdited] = max(dnum); % find most recently edited loc file
+        locFile = locFile(IndLastEdited); % reassign locFile to only most recently edited
+
+    end
+    load(fullfile(locFile.folder, locFile.name));
+    for wn = 1:numel(whale)
+        if isempty(whale{wn})
+            continue
+        end
+        try
+            Iuse = find(~isnan(whale{wn}.wlocSmooth(:,1)));
+        catch
+            continue
+        end
+%         Irem = find(abs(whale{wn}.wlocSmooth(Iuse, 1))>2000 | abs(whale{wn}.wlocSmooth(Iuse, 2))>2000);
+%         Iuse(Irem) = [];
+
+        if isempty(Iuse)
+            continue
+        end
+
+        
+
+        % fit line to data
+        X = [ones(size(Iuse)), whale{wn}.wlocSmooth(Iuse, 1)];
+        Y = whale{wn}.wlocSmooth(Iuse, 2);
+%         B = X\Y;
+
+        i = i+1;
+        displacement = whale{wn}.wlocSmooth(Iuse(end), :) - whale{wn}.wlocSmooth(Iuse(1), :);
+
+        netAng(i) = atan2d(displacement(2), displacement(1));
+
+        angCol = round(netAng(i));
+        if angCol<1
+            angCol = angCol + 360;
+        end
+%         netAng(i) = atan2d(B(2), 1);
+
+        time(i) = mean(whale{wn}.TDet(Iuse, :));
+%         plot(-2000:2000, (-2000:2000)*B(2) + B(1), 'k-')
+
+        ok = 1;
+        plot(whale{wn}.wlocSmooth(Iuse, 1), whale{wn}.wlocSmooth(Iuse, 2), 'color', col(angCol, :))
+        hold on
+    end
+    
+    
+
+end
+plot(hloc(1, 1), hloc(1,2), 'ks')
+plot(hloc(2, 1), hloc(2,2), 'ks')
+plot(hloc(3, 1), hloc(3,2), 'ko')
+plot(hloc(4, 1), hloc(4,2), 'ko')
+hold off
+grid on
+pbaspect([1,1,1])
+
+subplot(1,2,2)
+for i = 1:360
+    polarplot(deg2rad(i).*[1,1], [0,1], 'color', col(i, :), 'LineWidth', 3)
+    hold on
+end
+hold off
+
+% 
+% caxis([1, 360])
+% colorbar;
+% colormap(gca, 'hsv')
+
+%%
+figure(11)
+plot(time, netAng, '.')
+datetick
+ylabel('Net direction of movement [deg from due east]')
+ylim([-180, 180])
+yticks(-180:90:180)
+yticklabels({'W', 'S', 'E', 'N', 'W'})
+grid on
+
+figure(12)
+netAng(netAng<=0) = netAng(netAng<=0) + 360;
+polarhistogram(deg2rad(netAng), 12)
+title('histogram of net angles')
+
+%% monthly heading histograms
+
