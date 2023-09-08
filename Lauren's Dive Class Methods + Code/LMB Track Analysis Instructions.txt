@@ -1,0 +1,24 @@
+LMB 09/08/2023
+This document outlines the pieces of code that I used to analyze my final tracks!
+
+1. I used trackAnalysis_depth.m to calculate some statistics in the z dimension for each track.
+I also went back through a few weeks later and added a few lines to constrain lateral movement.
+This script goes through each track folder, grabs the whale struct, and then calculates the statistics and 
+saves them in a .mat file that I named z_stats. There is one of these files per encounter!
+This file saves the max depth, min depth, the change in depth, the mean depth and std, and then the lateral distance.
+Each column is for a whale in the track.
+
+2. I used classifyDiveTypes.m to classify each track as a certain type of dive. This script grabs the z_stats
+file and then adds a classification number based on the values. You can tweak the classification parameters based
+off what patterns you notice in your tracks!
+
+3. I used calc_whaleDistSpeed.m to calculate distance and speed of each whale in each encounter. This script takes the
+whale and z_stats files and calculates the distance, duration, and speed between each detection. It also calculates the
+total distance (not displacement!) and total speed (total track time / total track distance) for each track, then the 
+average track speed and change in speed throughout the track. It saves all these values in a file called distSpd.mat,
+one for each encounter.
+
+From there, I made the track spaghetti plots (by dive class + by normalized track time), looked at group size per
+encounter, and then looked for patterns between dive classification and the rest of these parameters. Most of the code
+that I wrote is just a bunch of random plotting to investigate the relationship between all of these vairables, but
+I can share it with you if you would like!
